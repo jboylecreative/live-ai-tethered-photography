@@ -4,7 +4,11 @@ __pycache__/
 *.pyc
 .DS_Store
 session.json
-ai-incoming/
-ai-output/
-tethered-ai-archive/
-selects/
+ai-incoming/*
+ai-output/*
+tethered-ai-archive/*
+selects/*
+!ai-incoming/.gitkeep
+!ai-output/.gitkeep
+!tethered-ai-archive/.gitkeep
+!selects/.gitkeep
