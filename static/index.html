@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tethered AI Display</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+    cursor: none;
+  }
+
+  body:hover { cursor: default; }
+  body.show-cursor { cursor: default; }
+
+  /* ── Main display area ── */
+  #display {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* Single image view */
+  #display.single .image-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #display.single .image-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  /* Side-by-side view */
+  #display.side-by-side {
+    gap: 4px;
+  }
+
+  #display.side-by-side .image-container {
+    width: 50%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #display.side-by-side .image-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .image-container { position: relative; }
+
+  /* Label overlay on images */
+  .image-label {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #aaa;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .image-container:hover .image-label { opacity: 1; }
+
+  /* ── Status bar ── */
+  #status {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 100;
+    font-size: 13px;
+  }
+
+  body:hover #status { opacity: 1; }
+
+  #status .left { display: flex; gap: 16px; align-items: center; }
+  #status .right { display: flex; gap: 16px; align-items: center; }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #333;
+    display: inline-block;
+  }
+  .status-dot.connected { background: #4a4; }
+  .status-dot.processing { background: #da3; animation: pulse 1s infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .mode-badge {
+    background: rgba(255,255,255,0.1);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #888;
+  }
+
+  /* ── Waiting state ── */
+  #waiting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    color: #444;
+  }
+
+  #waiting .ring {
+    width: 48px; height: 48px;
+    border: 2px solid #222;
+    border-top-color: #555;
+    border-radius: 50%;
+    animation: spin 1.5s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Processing overlay ── */
+  #processing-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 95;
+    font-size: 14px;
+    color: #aaa;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  #processing-overlay.active { display: flex; }
+
+  #processing-overlay .ring {
+    width: 32px; height: 32px;
+    border: 2px solid #333;
+    border-top-color: #888;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  /* ── Keyboard help ── */
+  #help {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.8);
+    padding: 16px 20px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 2;
+    color: #666;
+    display: block;
+    z-index: 100;
+  }
+
+  #help kbd {
+    background: #222;
+    border: 1px solid #333;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    color: #aaa;
+  }
+
+  #help.hidden { display: none; }
+  body.edit-mode #help { display: none; }
+
+  /* ── Help hint (shown when help is hidden) ── */
+  #help-hint {
+    position: fixed;
+    bottom: 8px;
+    right: 12px;
+    font-size: 10px;
+    color: #444;
+    z-index: 100;
+    display: none;
+  }
+
+  #help.hidden ~ #help-hint { display: block; }
+  body.edit-mode #help-hint { display: none; }
+
+  /* ── Prompt panel ── */
+  #prompt-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(10, 10, 10, 0.95);
+    border-top: 1px solid #222;
+    padding: 16px 24px;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    z-index: 100;
+  }
+
+  #prompt-panel.open { transform: translateY(0); }
+
+  #prompt-panel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  #prompt-panel .panel-header span {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #666;
+  }
+
+  #prompt-panel .close-btn {
+    background: none;
+    border: 1px solid #333;
+    color: #888;
+    padding: 2px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+
+  #prompt-panel .close-btn:hover { border-color: #555; color: #ccc; }
+
+  #prompt-panel textarea {
+    width: 100%;
+    min-height: 60px;
+    max-height: 150px;
+    background: #161616;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #ddd;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px 12px;
+    resize: vertical;
+    outline: none;
+  }
+
+  #prompt-panel textarea:focus { border-color: #555; }
+
+  #prompt-panel .panel-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+  }
+
+  #prompt-panel .hint {
+    font-size: 11px;
+    color: #444;
+  }
+
+  #prompt-panel .save-btn {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #ccc;
+    padding: 6px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  #prompt-panel .save-btn:hover { background: #333; border-color: #666; }
+
+  /* ── Edit mode overlay ── */
+  #edit-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    z-index: 80;
+    background: #0a0a0a;
+  }
+
+  #edit-overlay.active { display: block; }
+
+  body.edit-mode #status { border-top: 2px solid #d4a030; }
+
+  #edit-base-image {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: calc(100% - 64px);
+    object-fit: contain;
+    z-index: 1;
+  }
+
+  #edit-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: calc(100% - 64px);
+    z-index: 2;
+    cursor: crosshair;
+  }
+
+  /* ── Edit toolbar ── */
+  #edit-toolbar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(10, 10, 10, 0.95);
+    border-top: 1px solid #333;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    z-index: 90;
+    height: 64px;
+  }
+
+  .toolbar-section { display: flex; align-items: center; gap: 8px; }
+  .toolbar-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #666;
+  }
+
+  #brush-size { width: 80px; accent-color: #888; }
+  #brush-size-label { font-size: 11px; color: #888; min-width: 30px; }
+
+  #color-swatches { display: flex; gap: 4px; }
+  .swatch {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+  }
+  .swatch.active { border-color: #fff; }
+
+  .tool-btn {
+    background: #222;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .tool-btn:hover { background: #333; color: #ddd; }
+
+  #edit-prompt-input {
+    flex: 1;
+    height: 36px;
+    background: #161616;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #ddd;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 10px;
+    resize: none;
+    outline: none;
+  }
+  #edit-prompt-input:focus { border-color: #555; }
+
+  .send-btn {
+    background: #2a5a2a;
+    border: 1px solid #4a4;
+    color: #ccc;
+    padding: 8px 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .send-btn:hover { background: #3a6a3a; }
+
+  .exit-btn {
+    background: #333;
+    border: 1px solid #555;
+    color: #aaa;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .exit-btn:hover { background: #444; color: #ddd; }
+
+  /* ── Pending shots badge ── */
+  #pending-badge {
+    position: fixed;
+    top: 50px; left: 20px;
+    background: rgba(200, 100, 0, 0.8);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    z-index: 90;
+    display: none;
+  }
+
+  /* ── Select button ── */
+  #select-btn {
+    background: none;
+    border: 1px solid #444;
+    color: #888;
+    padding: 2px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+  #select-btn:hover { border-color: #666; color: #ccc; }
+  #select-btn.selected {
+    background: rgba(76, 175, 80, 0.3);
+    border-color: #4caf50;
+    color: #4caf50;
+  }
+
+  /* ── Filter badge ── */
+  .filter-badge {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .filter-badge.selects-mode {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.4);
+  }
+
+  /* ── Selected indicator on image label ── */
+  .select-indicator {
+    color: #4caf50;
+    margin-left: 6px;
+  }
+
+  /* ── No selects message ── */
+  #no-selects {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: #444;
+    font-size: 14px;
+  }
+  #no-selects.visible { display: flex; }
+
+  /* ── Stage mode — clean display, no UI chrome ── */
+  body.stage-mode #status,
+  body.stage-mode #help,
+  body.stage-mode #help-hint,
+  body.stage-mode #prompt-panel,
+  body.stage-mode #edit-overlay,
+  body.stage-mode #no-selects,
+  body.stage-mode #processing-overlay { display: none !important; }
+  body.stage-mode .image-label { display: none !important; }
+  body.stage-mode { cursor: none; }
+  body.stage-mode:hover { cursor: none; }
+</style>
+</head>
+<body>
+
+<div id="status">
+  <div class="left">
+    <span class="status-dot" id="conn-dot"></span>
+    <span id="conn-label">Connecting…</span>
+    <span class="mode-badge" id="view-mode-badge">AI</span>
+  </div>
+  <div class="right">
+    <button id="select-btn" title="Select / Deselect (X)">&#9733; Select</button>
+    <span class="filter-badge" id="filter-badge" title="Toggle filter (G)">ALL</span>
+    <span id="counter"></span>
+  </div>
+</div>
+
+<div id="display" class="single">
+  <div id="waiting">
+    <div class="ring"></div>
+    <div>Waiting for first capture…</div>
+  </div>
+  <div id="no-selects">
+    <div>No selects yet — press X to mark favorites</div>
+  </div>
+</div>
+
+<div id="processing-overlay">
+  <div class="ring"></div>
+  <div>Processing…</div>
+</div>
+
+<div id="help">
+  <kbd>Space</kbd> Toggle original / AI<br>
+  <kbd>S</kbd> Side-by-side view<br>
+  <kbd>←</kbd> <kbd>→</kbd> Previous / Next<br>
+  <kbd>P</kbd> Edit prompt<br>
+  <kbd>E</kbd> Edit mode (draw on AI result)<br>
+  <kbd>Esc</kbd> Exit edit mode<br>
+  <kbd>[</kbd> <kbd>]</kbd> Brush size (edit mode)<br>
+  <kbd>X</kbd> Select / deselect<br>
+  <kbd>G</kbd> Toggle selects filter<br>
+  <kbd>F</kbd> Fullscreen<br>
+  <kbd>?</kbd> Hide shortcuts
+</div>
+<div id="help-hint">Press <kbd>?</kbd> for shortcuts</div>
+
+<div id="prompt-panel">
+  <div class="panel-header">
+    <span>Prompt</span>
+    <button class="close-btn" onclick="togglePromptPanel()">Close</button>
+  </div>
+  <textarea id="prompt-input" placeholder="Enter your prompt here..." spellcheck="false"></textarea>
+  <div class="panel-footer">
+    <span class="hint">Press Enter to save, Shift+Enter for newline</span>
+    <button class="save-btn" onclick="savePrompt()">Save</button>
+  </div>
+</div>
+
+<div id="edit-overlay">
+  <img id="edit-base-image" alt="Edit base">
+  <canvas id="edit-canvas"></canvas>
+
+  <div id="edit-toolbar">
+    <button id="exit-edit-btn" class="exit-btn">Exit</button>
+    <div class="toolbar-section">
+      <span class="toolbar-label">Brush</span>
+      <input type="range" id="brush-size" min="2" max="40" value="8">
+      <span id="brush-size-label">8px</span>
+    </div>
+    <div class="toolbar-section">
+      <span class="toolbar-label">Color</span>
+      <div id="color-swatches">
+        <button class="swatch active" data-color="#ff0000" style="background:#ff0000"></button>
+        <button class="swatch" data-color="#00ff00" style="background:#00ff00"></button>
+        <button class="swatch" data-color="#0066ff" style="background:#0066ff"></button>
+        <button class="swatch" data-color="#ffff00" style="background:#ffff00"></button>
+        <button class="swatch" data-color="#ffffff" style="background:#ffffff"></button>
+        <button class="swatch" data-color="#000000" style="background:#000000;border-color:#555"></button>
+      </div>
+    </div>
+    <div class="toolbar-section">
+      <button id="undo-btn" class="tool-btn">Undo</button>
+      <button id="clear-btn" class="tool-btn">Clear</button>
+    </div>
+    <textarea id="edit-prompt-input" placeholder="Describe the edit..." spellcheck="false"></textarea>
+    <button id="send-edit-btn" class="send-btn">Send Edit</button>
+  </div>
+
+  <div id="pending-badge"></div>
+</div>
+
+<script>
+  // ── Stage mode ──
+  const stageMode = new URLSearchParams(location.search).get("role") === "stage";
+  if (stageMode) document.body.classList.add("stage-mode");
+
+  // ── State ──
+  let images = [];
+  let currentIndex = -1;
+  let viewMode = "ai"; // "ai", "original", "side-by-side"
+  let ws = null;
+
+  // ── Selects / filter ──
+  let filterMode = "all"; // "all" or "selects"
+
+  // ── Stage edit tracking ──
+  let stageInEditMode = false;
+  let stageEditSrc = "";
+
+  // ── Edit mode state ──
+  let editMode = false;
+  let pendingShots = 0;
+  let strokes = [];
+  let currentStroke = null;
+  let brushSize = 8;
+  let brushColor = "#ff0000";
+  let isDrawing = false;
+
+  // ── DOM refs ──
+  const display = document.getElementById("display");
+  const waiting = document.getElementById("waiting");
+  const overlay = document.getElementById("processing-overlay");
+  const connDot = document.getElementById("conn-dot");
+  const connLabel = document.getElementById("conn-label");
+  const viewBadge = document.getElementById("view-mode-badge");
+  const counter = document.getElementById("counter");
+  const help = document.getElementById("help");
+  const promptPanel = document.getElementById("prompt-panel");
+  const promptInput = document.getElementById("prompt-input");
+  const selectBtn = document.getElementById("select-btn");
+  const filterBadge = document.getElementById("filter-badge");
+  const noSelects = document.getElementById("no-selects");
+  let promptPanelOpen = false;
+
+  // ── WebSocket ──
+  function connect() {
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+    ws.onopen = () => {
+      connDot.className = "status-dot connected";
+      connLabel.textContent = "Connected";
+    };
+
+    ws.onclose = () => {
+      connDot.className = "status-dot";
+      connLabel.textContent = "Disconnected — reconnecting…";
+      setTimeout(connect, 2000);
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      handleMessage(msg);
+    };
+  }
+
+  // ── Broadcast view state to stage clients ──
+  function broadcastViewState() {
+    if (stageMode) return; // stage clients don't broadcast
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+      type: "sync_view",
+      view_mode: viewMode,
+      edit_mode: editMode,
+      edit_src: editMode ? editBaseImage.src : "",
+    }));
+  }
+
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case "history":
+        images = msg.images;
+        currentIndex = msg.current_index;
+        render();
+        break;
+
+      case "new_image":
+        images.push({
+          id: msg.id,
+          original: msg.original,
+          ai: msg.ai,
+          timestamp: msg.timestamp,
+          selected: msg.selected || false,
+          parent_id: msg.parent_id || null,
+          edit_prompt: msg.edit_prompt || null,
+          prompt: msg.prompt || "",
+        });
+        if (editMode) {
+          pendingShots++;
+          updatePendingBadge();
+        } else {
+          currentIndex = images.length - 1;
+          overlay.classList.remove("active");
+          render();
+        }
+        break;
+
+      case "processing":
+        overlay.classList.add("active");
+        break;
+
+      case "show":
+        currentIndex = msg.index;
+        render();
+        break;
+
+      case "edit_result":
+        overlay.classList.remove("active");
+        // Edit creates a new entry — add it to our images array
+        images.push({
+          id: msg.id,
+          original: msg.original,
+          ai: msg.ai,
+          timestamp: msg.timestamp,
+          selected: msg.selected || false,
+          parent_id: msg.parent_id || null,
+          edit_prompt: msg.edit_prompt || null,
+          prompt: msg.prompt || "",
+        });
+        currentIndex = msg.index;
+
+        if (stageMode) {
+          if (stageInEditMode) {
+            stageEditSrc = msg.ai;
+            render();
+          }
+        } else if (editMode) {
+          // Stay in edit mode on the new entry
+          editBaseImage.onload = () => {
+            editCanvas.width = editBaseImage.naturalWidth;
+            editCanvas.height = editBaseImage.naturalHeight;
+            clearCanvas();
+          };
+          editBaseImage.src = msg.ai;
+          broadcastViewState();
+        }
+        break;
+
+      case "select_updated":
+        if (msg.index >= 0 && msg.index < images.length) {
+          images[msg.index].selected = msg.selected;
+          updateSelectButton();
+          render();
+        }
+        break;
+
+      case "sync_view":
+        if (stageMode) {
+          viewMode = msg.view_mode;
+          if (msg.edit_mode) {
+            stageInEditMode = true;
+            if (msg.edit_src) stageEditSrc = msg.edit_src;
+          } else {
+            stageInEditMode = false;
+            stageEditSrc = "";
+          }
+          render();
+        }
+        break;
+
+      case "error":
+        overlay.classList.remove("active");
+        console.error("Pipeline error:", msg.message);
+        break;
+
+      case "prompt":
+        promptInput.value = msg.prompt;
+        break;
+    }
+  }
+
+  // ── Rendering ──
+  function render() {
+    // Check if we're in selects filter with no selects
+    const selectCount = images.filter(i => i.selected).length;
+
+    if (images.length === 0 || currentIndex < 0) {
+      waiting.style.display = "flex";
+      noSelects.classList.remove("visible");
+      updateSelectButton();
+      return;
+    }
+
+    if (filterMode === "selects" && selectCount === 0) {
+      waiting.style.display = "none";
+      noSelects.classList.add("visible");
+      display.className = "single";
+      const containers = display.querySelectorAll(".image-container");
+      containers.forEach(c => c.remove());
+      counter.textContent = `0 selects`;
+      updateSelectButton();
+      return;
+    }
+
+    waiting.style.display = "none";
+    noSelects.classList.remove("visible");
+
+    // Stage mode in edit: show the edit image fullscreen, no overlay
+    if (stageMode && stageInEditMode && stageEditSrc) {
+      display.className = "single";
+      display.innerHTML = `
+        <div class="image-container">
+          <img src="${stageEditSrc}" alt="Edit">
+        </div>
+      `;
+      display.appendChild(noSelects);
+      updateSelectButton();
+      return;
+    }
+
+    const img = images[currentIndex];
+    const aiSrc = img.ai;
+    const selectedMark = img.selected ? '<span class="select-indicator">&#9733;</span>' : "";
+
+    // Counter: show filtered count in selects mode
+    if (filterMode === "selects") {
+      const filteredIndices = getFilteredIndices();
+      const posInFiltered = filteredIndices.indexOf(currentIndex) + 1;
+      counter.textContent = `${posInFiltered} / ${filteredIndices.length} selects`;
+    } else {
+      counter.textContent = `${currentIndex + 1} / ${images.length}`;
+    }
+
+    if (viewMode === "side-by-side") {
+      display.className = "side-by-side";
+      display.innerHTML = `
+        <div class="image-container">
+          <img src="${img.original}" alt="Original">
+          <div class="image-label">Original</div>
+        </div>
+        <div class="image-container">
+          <img src="${aiSrc}" alt="AI">
+          <div class="image-label">AI${selectedMark}</div>
+        </div>
+      `;
+      display.appendChild(noSelects);
+      viewBadge.textContent = "SIDE BY SIDE";
+    } else {
+      display.className = "single";
+      const src = viewMode === "original" ? img.original : aiSrc;
+      const label = viewMode === "original" ? "Original" : "AI";
+      display.innerHTML = `
+        <div class="image-container">
+          <img src="${src}" alt="${label}">
+          <div class="image-label">${label}${selectedMark}</div>
+        </div>
+      `;
+      display.appendChild(noSelects);
+      viewBadge.textContent = label.toUpperCase();
+    }
+
+    updateSelectButton();
+  }
+
+  // ── Navigation ──
+  function navigate(direction) {
+    if (filterMode === "selects") {
+      navigateFiltered(direction);
+      return;
+    }
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "navigate", direction }));
+    }
+  }
+
+  // ── Selects & filtering ──
+  function getFilteredIndices() {
+    const indices = [];
+    for (let i = 0; i < images.length; i++) {
+      if (images[i].selected) indices.push(i);
+    }
+    return indices;
+  }
+
+  function toggleSelect() {
+    if (images.length === 0 || currentIndex < 0) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    ws.send(JSON.stringify({
+      type: "toggle_select",
+      index: currentIndex,
+    }));
+  }
+
+  function updateSelectButton() {
+    if (images.length === 0 || currentIndex < 0) {
+      selectBtn.classList.remove("selected");
+      selectBtn.innerHTML = "&#9733; Select";
+      return;
+    }
+    const img = images[currentIndex];
+    if (img.selected) {
+      selectBtn.classList.add("selected");
+      selectBtn.innerHTML = "&#9733; Selected";
+    } else {
+      selectBtn.classList.remove("selected");
+      selectBtn.innerHTML = "&#9733; Select";
+    }
+  }
+
+  function toggleFilter() {
+    filterMode = filterMode === "all" ? "selects" : "all";
+    filterBadge.textContent = filterMode === "all" ? "ALL" : "SELECTS";
+    filterBadge.classList.toggle("selects-mode", filterMode === "selects");
+
+    if (filterMode === "selects") {
+      const filtered = getFilteredIndices();
+      if (filtered.length > 0) {
+        let closest = filtered[0];
+        for (const idx of filtered) {
+          if (Math.abs(idx - currentIndex) < Math.abs(closest - currentIndex)) {
+            closest = idx;
+          }
+        }
+        currentIndex = closest;
+      }
+    }
+    render();
+  }
+
+  function navigateFiltered(direction) {
+    const filtered = getFilteredIndices();
+    if (filtered.length === 0) return;
+
+    const currentPosInFiltered = filtered.indexOf(currentIndex);
+
+    if (direction === "prev") {
+      if (currentPosInFiltered > 0) {
+        currentIndex = filtered[currentPosInFiltered - 1];
+      } else if (currentPosInFiltered === -1) {
+        for (let i = filtered.length - 1; i >= 0; i--) {
+          if (filtered[i] < currentIndex) { currentIndex = filtered[i]; break; }
+        }
+      }
+    } else {
+      if (currentPosInFiltered >= 0 && currentPosInFiltered < filtered.length - 1) {
+        currentIndex = filtered[currentPosInFiltered + 1];
+      } else if (currentPosInFiltered === -1) {
+        for (const idx of filtered) {
+          if (idx > currentIndex) { currentIndex = idx; break; }
+        }
+      }
+    }
+    render();
+  }
+
+  // ── Prompt panel ──
+  function togglePromptPanel() {
+    promptPanelOpen = !promptPanelOpen;
+    promptPanel.classList.toggle("open", promptPanelOpen);
+    if (promptPanelOpen) {
+      promptInput.focus();
+      promptInput.select();
+    }
+  }
+
+  function savePrompt() {
+    const newPrompt = promptInput.value.trim();
+    if (newPrompt && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "set_prompt", prompt: newPrompt }));
+    }
+    togglePromptPanel();
+  }
+
+  // Enter to save prompt (Shift+Enter for newline)
+  promptInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      savePrompt();
+    }
+    if (e.key === "Escape") {
+      togglePromptPanel();
+    }
+    e.stopPropagation();
+  });
+
+  // ── Keyboard controls ──
+  document.addEventListener("keydown", (e) => {
+    // Stage mode: no keyboard interaction
+    if (stageMode) return;
+    // Don't handle shortcuts if prompt panel is open
+    if (promptPanelOpen) return;
+
+    switch (e.key) {
+      case "Escape":
+        if (editMode) exitEditMode();
+        break;
+
+      case "e":
+      case "E":
+        if (!editMode) { e.preventDefault(); enterEditMode(); }
+        break;
+
+      case "[":
+        if (editMode) { brushSize = Math.max(2, brushSize - 2); updateBrushUI(); }
+        break;
+
+      case "]":
+        if (editMode) { brushSize = Math.min(40, brushSize + 2); updateBrushUI(); }
+        break;
+
+      case " ":
+        if (editMode) break;
+        e.preventDefault();
+        if (viewMode === "side-by-side") {
+          viewMode = "ai";
+        } else {
+          viewMode = viewMode === "ai" ? "original" : "ai";
+        }
+        render();
+        broadcastViewState();
+        break;
+
+      case "s":
+      case "S":
+        if (editMode) break;
+        viewMode = viewMode === "side-by-side" ? "ai" : "side-by-side";
+        render();
+        broadcastViewState();
+        break;
+
+      case "ArrowLeft":
+        if (editMode) break;
+        navigate("prev");
+        break;
+
+      case "ArrowRight":
+        if (editMode) break;
+        navigate("next");
+        break;
+
+      case "f":
+      case "F":
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen();
+        } else {
+          document.exitFullscreen();
+        }
+        break;
+
+      case "?":
+        help.classList.toggle("hidden");
+        break;
+
+      case "x":
+      case "X":
+        if (editMode) break;
+        toggleSelect();
+        break;
+
+      case "g":
+      case "G":
+        if (editMode) break;
+        toggleFilter();
+        break;
+
+      case "p":
+      case "P":
+        if (editMode) break;
+        e.preventDefault();
+        togglePromptPanel();
+        break;
+    }
+  });
+
+  // ── Edit mode ──
+  const editOverlay = document.getElementById("edit-overlay");
+  const editBaseImage = document.getElementById("edit-base-image");
+  const editCanvas = document.getElementById("edit-canvas");
+  const editCtx = editCanvas.getContext("2d");
+  const editPromptInput = document.getElementById("edit-prompt-input");
+
+  function enterEditMode() {
+    if (images.length === 0 || currentIndex < 0) return;
+    const entry = images[currentIndex];
+    if (!entry.ai) return;
+
+    editMode = true;
+    pendingShots = 0;
+    strokes = [];
+    document.body.classList.add("edit-mode");
+
+    editBaseImage.src = entry.ai;
+    editBaseImage.onload = () => {
+      editCanvas.width = editBaseImage.naturalWidth;
+      editCanvas.height = editBaseImage.naturalHeight;
+      clearCanvas();
+    };
+
+    editOverlay.classList.add("active");
+    updatePendingBadge();
+    editPromptInput.focus();
+    broadcastViewState();
+  }
+
+  function exitEditMode() {
+    editMode = false;
+    strokes = [];
+    document.body.classList.remove("edit-mode");
+    editOverlay.classList.remove("active");
+
+    if (pendingShots > 0) {
+      currentIndex = images.length - 1;
+    }
+    pendingShots = 0;
+    render();
+    broadcastViewState();
+  }
+
+  // ── Canvas drawing ──
+  function canvasPos(e) {
+    const rect = editCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (editCanvas.width / rect.width),
+      y: (e.clientY - rect.top) * (editCanvas.height / rect.height),
+    };
+  }
+
+  function startStroke(e) {
+    isDrawing = true;
+    currentStroke = { color: brushColor, size: brushSize, points: [canvasPos(e)] };
+  }
+
+  function continueStroke(e) {
+    if (!isDrawing || !currentStroke) return;
+    currentStroke.points.push(canvasPos(e));
+    redrawStrokes();
+  }
+
+  function endStroke() {
+    if (currentStroke && currentStroke.points.length > 1) {
+      strokes.push(currentStroke);
+    }
+    currentStroke = null;
+    isDrawing = false;
+  }
+
+  function redrawStrokes() {
+    editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
+    const allStrokes = [...strokes, ...(currentStroke ? [currentStroke] : [])];
+    for (const stroke of allStrokes) {
+      editCtx.strokeStyle = stroke.color;
+      editCtx.lineWidth = stroke.size;
+      editCtx.lineCap = "round";
+      editCtx.lineJoin = "round";
+      editCtx.beginPath();
+      editCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (let i = 1; i < stroke.points.length; i++) {
+        editCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      editCtx.stroke();
+    }
+  }
+
+  function undoStroke() {
+    strokes.pop();
+    redrawStrokes();
+  }
+
+  function clearCanvas() {
+    strokes = [];
+    editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
+  }
+
+  // ── Send edit ──
+  function sendEdit() {
+    const editPrompt = editPromptInput.value.trim();
+    if (!editPrompt) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = editBaseImage.naturalWidth;
+    offscreen.height = editBaseImage.naturalHeight;
+    const ctx = offscreen.getContext("2d");
+    ctx.drawImage(editBaseImage, 0, 0);
+    ctx.drawImage(editCanvas, 0, 0);
+
+    const dataUrl = offscreen.toDataURL("image/jpeg", 0.90);
+    const b64 = dataUrl.split(",")[1];
+
+    ws.send(JSON.stringify({
+      type: "edit_image",
+      index: currentIndex,
+      image: b64,
+      prompt: editPrompt,
+    }));
+
+    clearCanvas();
+  }
+
+  function updatePendingBadge() {
+    const badge = document.getElementById("pending-badge");
+    if (editMode && pendingShots > 0) {
+      badge.textContent = `${pendingShots} new shot${pendingShots > 1 ? "s" : ""}`;
+      badge.style.display = "block";
+    } else {
+      badge.style.display = "none";
+    }
+  }
+
+  function updateBrushUI() {
+    document.getElementById("brush-size").value = brushSize;
+    document.getElementById("brush-size-label").textContent = brushSize + "px";
+  }
+
+  // ── Wire up edit toolbar ──
+  editCanvas.addEventListener("pointerdown", startStroke);
+  editCanvas.addEventListener("pointermove", continueStroke);
+  editCanvas.addEventListener("pointerup", endStroke);
+  editCanvas.addEventListener("pointerleave", endStroke);
+
+  document.getElementById("undo-btn").addEventListener("click", undoStroke);
+  document.getElementById("clear-btn").addEventListener("click", clearCanvas);
+  document.getElementById("send-edit-btn").addEventListener("click", sendEdit);
+  document.getElementById("exit-edit-btn").addEventListener("click", exitEditMode);
+
+  document.getElementById("brush-size").addEventListener("input", (e) => {
+    brushSize = parseInt(e.target.value);
+    document.getElementById("brush-size-label").textContent = brushSize + "px";
+  });
+
+  document.querySelectorAll(".swatch").forEach(sw => {
+    sw.addEventListener("click", () => {
+      document.querySelectorAll(".swatch").forEach(s => s.classList.remove("active"));
+      sw.classList.add("active");
+      brushColor = sw.dataset.color;
+    });
+  });
+
+  editPromptInput.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendEdit();
+    }
+    if (e.key === "Escape") {
+      exitEditMode();
+    }
+  });
+
+  // ── Select & filter click handlers ──
+  selectBtn.addEventListener("click", toggleSelect);
+  filterBadge.addEventListener("click", toggleFilter);
+
+  // ── Start ──
+  connect();
+</script>
+</body>
+</html>
