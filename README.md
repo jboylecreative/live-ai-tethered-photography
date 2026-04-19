@@ -1,6 +1,12 @@
-# Tethered AI Photography Pipeline
+# Live AI Tethered Photography
 
-A local Python app that watches a folder for new photos, sends them to the Gemini API for AI image transformation, and displays the results on a fullscreen web-based display — designed for live tethered shooting.
+Shoot. Transform. Display — in real time, on set.
+
+This tool connects your camera to Google's Gemini AI so that every photo you take is instantly transformed and displayed as an AI-augmented image on a second screen. It's designed for live shoots — fashion, portrait, commercial — where you want to show clients or collaborators a creative AI interpretation of each shot the moment it's captured, right alongside the original.
+
+You define the transformation via a prompt (e.g. "restyle this as a futuristic editorial look"). Each time you shoot, the image flows automatically from your camera to Gemini and back, with the result appearing fullscreen on your display within seconds.
+
+No manual steps between shots. No switching apps. Just shoot.
 
 ## How It Works
 
