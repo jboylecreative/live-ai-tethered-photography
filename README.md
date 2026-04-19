@@ -2,7 +2,7 @@
 
 Shoot. Transform. Display — in real time, on set.
 
-This tool connects your camera to Google's Gemini AI so that every photo you take is instantly transformed and displayed as an AI-augmented image on a second screen. It's designed for live shoots — fashion, portrait, commercial — where you want to show clients or collaborators a creative AI interpretation of each shot the moment it's captured, right alongside the original.
+This tool connects your camera to Google's Nano Banana image generator so that every photo you take is instantly transformed and displayed as an AI-augmented image on a second screen. It's designed for live shoots — fashion, portrait, commercial — where you want to show clients or collaborators a creative AI interpretation of each shot the moment it's captured, right alongside the original.
 
 You define the transformation via a prompt (e.g. "restyle this as a futuristic editorial look"). Each time you shoot, the image flows automatically from your camera to Gemini and back, with the result appearing fullscreen on your display within seconds.
 
